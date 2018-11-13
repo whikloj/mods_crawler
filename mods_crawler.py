@@ -19,7 +19,9 @@ strip_attribs = [
 ]
 config = {}
 
+
 def process_attribs(attribs):
+    """Make attributes clean for printing and strip values."""
     output = []
     for (attrib, value) in attribs.items():
         if not attrib.upper() in strip_attribs:
@@ -28,6 +30,7 @@ def process_attribs(attribs):
 
 
 def process_path(node, path=''):
+    """Somewhat recursive function to build XPaths."""
     global xpaths
     attribs = process_attribs(node.attrib)
     attrib_string = ''
@@ -44,29 +47,37 @@ def process_path(node, path=''):
             xpaths[path] += 1
 
 
+def get_last_version(element):
+    """Get the last version of a datastream by comparing ID numbers."""
+    versions = element.findall('.//foxml:datastreamVersion', namespaces)
+    if versions is not None:
+        current_version_number = 0
+        for version in versions:
+            (dsID, check_version) = version.attrib['ID'].split('.')
+            if int(check_version) > current_version_number:
+                current_version_number = int(check_version)
+        return element.find("./foxml:datastreamVersion[@ID='{0}.{1}']".format(
+            dsID,
+            current_version_number
+        ), namespaces)
+    return None
+
+
 def get_mods(tree):
+    """Get the MODS record either out of the Inline XML or from a managed file."""
     results = tree.findall('.//foxml:datastream[@ID="MODS"]', namespaces)
     for result in results:
         if 'CONTROL_GROUP' in result.attrib and result.attrib['CONTROL_GROUP'] == 'X':
             '''Inline XML'''
-            mods = result.find('.//foxml:datastreamVersion[position() == last()]/foxml:xmlContent', namespaces)
+            mods = get_last_version(result)
             if mods is not None:
-                return mods
+                return mods.find('./foxml:xmlContent', namespaces)
         elif 'CONTROL_GROUP' in result.attrib and result.attrib['CONTROL_GROUP'] == 'M':
-            versions = result.findall('.//foxml:datastreamVersion', namespaces)
-            if versions is not None:
-                current_version_number = 0
-                for version in versions:
-                    (dsID, check_version) = version.attrib['ID'].split('.')
-                    if int(check_version) > current_version_number:
-                        current_version_number = int(check_version)
-                final_version = result.find("./foxml:datastreamVersion[@ID='{0}.{1}']".format(
-                                                   dsID,
-                                                   current_version_number
-                                               ) +
-                                               "/foxml:contentLocation[@TYPE='INTERNAL_ID']", namespaces)
-                if final_version is not None:
-                    mods_location = final_version.attrib['REF']
+            final_version = get_last_version(result)
+            if final_version is not None:
+                final_version_content = final_version.find("./foxml:contentLocation[@TYPE='INTERNAL_ID']", namespaces)
+                if final_version_content is not None:
+                    mods_location = final_version_content.attrib['REF']
                     if not mods_location.startswith("info:fedora/"):
                         mods_location = "info:fedora/{0}".format(mods_location)
                     mods_location = mods_location.replace("+", "/")
@@ -81,11 +92,16 @@ def get_mods(tree):
                         with open(mods_file_location, 'rt') as f:
                             for (prefix, uri) in namespaces.items():
                                 ElementTree.register_namespace(prefix, uri)
-                            tree = ElementTree.parse(f)
-                            return tree.getroot()
+                            try:
+                                tree = ElementTree.parse(f)
+                                return tree.getroot()
+                            except ElementTree.ParseError:
+                                print("Error parsing {0}, may not be XML. Skipping".format(mods_file_location))
+                                return None
 
 
 def start(args):
+    """Starter iterates all files in the objectStore directory."""
     global config
     config = args
     for (dirpath, dirnames, filenames) in os.walk(config.objectstore):
@@ -93,12 +109,16 @@ def start(args):
             filepath = os.path.join(dirpath, file)
             print("Processing objectstore file {}".format(filepath))
             with open(filepath, 'rt') as f:
-                if filepath.endswith("info%3Afedora%2Fislandora%3A8"):
-                    pass
                 for (prefix, uri) in namespaces.items():
                     ElementTree.register_namespace(prefix, uri)
-                tree = ElementTree.parse(f)
-                mods = get_mods(tree)
+
+                try:
+                    tree = ElementTree.parse(f)
+                    mods = get_mods(tree)
+                except ElementTree.ParseError:
+                    print("Error parsing {0}, may not be XML. Skipping".format(filepath))
+                    mods = None
+
                 if mods is not None:
                     process_path(mods)
                 else:
@@ -119,6 +139,10 @@ if __name__ == '__main__':
     args.datastreamstore = os.path.realpath(args.datastreamstore)
     if not os.path.exists(args.objectstore):
         parser.error("Object store path not found ({})".format(args.objectstore))
+    elif not os.path.isdir(args.objectstore):
+        parser.error("Object store path is not a directory ({})".format(args.objectstore))
     elif not os.path.exists(args.datastreamstore):
         parser.error("Datastream store path not found ({})".format(args.datastreamstore))
+    elif not os.path.isdir(args.datastreamstore):
+        parser.error("Datastream store path is not a directory ({})".format(args.datastreamstore))
     start(args)
