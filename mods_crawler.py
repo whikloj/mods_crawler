@@ -102,31 +102,59 @@ def get_mods(tree):
 
 def start(args):
     """Starter iterates all files in the objectStore directory."""
-    global config
-    config = args
+    setup(args)
     for (dirpath, dirnames, filenames) in os.walk(config.objectstore):
         for file in filenames:
-            filepath = os.path.join(dirpath, file)
-            print("Processing objectstore file {}".format(filepath))
-            with open(filepath, 'rt') as f:
-                for (prefix, uri) in namespaces.items():
-                    ElementTree.register_namespace(prefix, uri)
+            if allowed_prefix(file):
+                filepath = os.path.join(dirpath, file)
+                print("Processing objectstore file {}".format(filepath))
+                with open(filepath, 'rt') as f:
+                    for (prefix, uri) in namespaces.items():
+                        ElementTree.register_namespace(prefix, uri)
 
-                try:
-                    tree = ElementTree.parse(f)
-                    mods = get_mods(tree)
-                except ElementTree.ParseError:
-                    print("Error parsing {0}, may not be XML. Skipping".format(filepath))
-                    mods = None
+                    try:
+                        tree = ElementTree.parse(f)
+                        mods = get_mods(tree)
+                    except ElementTree.ParseError:
+                        print("Error parsing {0}, may not be XML. Skipping".format(filepath))
+                        mods = None
 
-                if mods is not None:
-                    process_path(mods)
-                else:
-                    continue
+                    if mods is not None:
+                        process_path(mods)
+                    else:
+                        continue
+            else:
+                print("Skipping {0} due to namespace restrictions.".format(file))
     print()
     for (xpath, count) in xpaths.items():
         print("XPath {0} was used {1} times".format(xpath, count))
     print("\nDone")
+
+
+def allowed_prefix(filename):
+    """Check the filename against the allowed list."""
+    for ns in config.allowed_namespaces:
+        if filename.startswith(ns):
+            return True
+    return False
+
+
+def prefix_filename(filename):
+    """Adds the encoded info:fedora/ prefix if needed"""
+    if not (filename.startswith("info:fedora/") or filename.startswith("info%3Afedora%2F")):
+        return urllib.parse.quote("info:fedora/" + filename, '')
+    return filename
+
+
+def setup(args):
+    """Any global configuration things."""
+    global config
+    config = args
+    if config.allowed_namespaces is None:
+        config.allowed_namespaces = ['islandora']
+    else:
+        config.allowed_namespaces = config.allowed_namespaces.split(',')
+    config.allowed_namespaces = [prefix_filename(x) for x in config.allowed_namespaces]
 
 
 if __name__ == '__main__':
@@ -134,6 +162,7 @@ if __name__ == '__main__':
     parser.add_argument('-o', '--objectstore', dest='objectstore', help="Location of the Fedora3 object store")
     parser.add_argument('-d', '--datastreamstore', dest='datastreamstore', help="Location of the Fedora3 datastream store")
     parser.add_argument('-l', '--hash_length', dest="hash_length", default=2, type=int, help="Integer length of the configured hash (defaults to 2)")
+    parser.add_argument('-n', '--namespaces', dest="allowed_namespaces", help="Comma delimited list of namespaces to parse, defaults to \"islandora\"")
     args = parser.parse_args()
     args.objectstore = os.path.realpath(args.objectstore)
     args.datastreamstore = os.path.realpath(args.datastreamstore)
