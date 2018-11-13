@@ -105,8 +105,8 @@ def start(args):
     setup(args)
     for (dirpath, dirnames, filenames) in os.walk(config.objectstore):
         for file in filenames:
+            filepath = os.path.join(dirpath, file)
             if allowed_prefix(file):
-                filepath = os.path.join(dirpath, file)
                 print("Processing objectstore file {}".format(filepath))
                 with open(filepath, 'rt') as f:
                     for (prefix, uri) in namespaces.items():
@@ -124,7 +124,7 @@ def start(args):
                     else:
                         continue
             else:
-                print("Skipping {0} due to namespace restrictions.".format(file))
+                print("Skipping {0} due to namespace restrictions.".format(filepath))
     print()
     for (xpath, count) in xpaths.items():
         print("XPath {0} was used {1} times".format(xpath, count))
