@@ -154,7 +154,7 @@ def setup(args):
         config.allowed_namespaces = ['islandora']
     else:
         config.allowed_namespaces = config.allowed_namespaces.split(',')
-    config.allowed_namespaces = [prefix_filename(x) for x in config.allowed_namespaces]
+    config.allowed_namespaces = [prefix_filename(x) for x in config.allowed_namespaces if len(x) > 0]
 
 
 if __name__ == '__main__':
